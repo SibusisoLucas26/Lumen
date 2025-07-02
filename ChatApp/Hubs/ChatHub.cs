@@ -1,47 +1,52 @@
+
 using Microsoft.AspNetCore.SignalR;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using System.Collections.Concurrent;
 
 namespace ChatApp.Hubs
 {
-
-
-public class ChatHub : Hub
-{
-    private static readonly Dictionary<string, string> UserConnections = new();
-
-    public override async Task OnConnectedAsync()
+    public class ChatHub : Hub
     {
-        string connectionId = Context.ConnectionId;
-        Console.WriteLine($"User connected: {connectionId}");
-        await Clients.Caller.SendAsync("Connected", connectionId);
-    }
+        // Maps usernames to connection IDs
+        private static ConcurrentDictionary<string, string> ConnectedUsers = new();
 
-    public override async Task OnDisconnectedAsync(Exception exception)
-    {
-        string connectionId = Context.ConnectionId;
-        Console.WriteLine($"User disconnected: {connectionId}");
-        UserConnections.Remove(connectionId);
-        await base.OnDisconnectedAsync(exception);
-    }
+        public override Task OnConnectedAsync()
+        {
+            var username = Context.GetHttpContext()?.Request.Query["username"].ToString();
+            if (!string.IsNullOrWhiteSpace(username))
+            {
+                ConnectedUsers[username] = Context.ConnectionId;
+            }
+            return base.OnConnectedAsync();
+        }
 
-    public async Task SendMessage(string user, string message, string chatRoom = "General")
-    {
-        Console.WriteLine($"Message from {user}: {message} (Room: {chatRoom})");
-        await Clients.All.SendAsync("ReceiveMessage", user, message);
-    }
+        public override Task OnDisconnectedAsync(Exception? exception)
+        {
+            var user = ConnectedUsers.FirstOrDefault(kvp => kvp.Value == Context.ConnectionId).Key;
+            if (!string.IsNullOrEmpty(user))
+            {
+                ConnectedUsers.TryRemove(user, out _);
+            }
+            return base.OnDisconnectedAsync(exception);
+        }
 
-    public async Task JoinRoom(string chatRoom)
-    {
-        await Groups.AddToGroupAsync(Context.ConnectionId, chatRoom);
-        await Clients.Group(chatRoom).SendAsync("ReceiveMessage", "System", $"{Context.ConnectionId} joined {chatRoom}");
-    }
+        public async Task SendMessage(string user, string message)
+        {
+            await Clients.All.SendAsync("ReceiveMessage", user, message);
+        }
 
-    public async Task LeaveRoom(string chatRoom)
-    {
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatRoom);
-        await Clients.Group(chatRoom).SendAsync("ReceiveMessage", "System", $"{Context.ConnectionId} left {chatRoom}");
+        public async Task SendPrivateMessage(string fromUser, string toUser, string message)
+        {
+            if (ConnectedUsers.TryGetValue(toUser, out var connectionId))
+            {
+                await Clients.Client(connectionId).SendAsync("ReceivePrivateMessage", fromUser, message);
+                await Clients.Caller.SendAsync("ReceivePrivateMessage", fromUser, message); // echo back
+            }
+        }
+
+        public async Task GetOnlineUsers()
+        {
+            var userList = ConnectedUsers.Keys.ToList();
+            await Clients.Caller.SendAsync("OnlineUsers", userList);
+        }
     }
-}
 }

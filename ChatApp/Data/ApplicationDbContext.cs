@@ -7,7 +7,7 @@ namespace ChatApp.Data
     /// <summary>
     /// Database context for the chat application.
     /// </summary>
-    public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityRole, string> {
+    public class ApplicationDbContext : IdentityDbContext<User, IdentityRole, string> {
         /// <summary>
         /// Initializes a new instance of the <see cref="ApplicationDbContext"/> class.
         /// </summary>
@@ -18,6 +18,7 @@ namespace ChatApp.Data
         /// Gets or sets the messages in the database.
         /// </summary>
         public DbSet<Message> Messages { get; set; }
+        public DbSet<User> Users{ get; set;}
 
         /// <summary>
         /// Configures the model for the database.
